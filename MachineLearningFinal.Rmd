@@ -1,0 +1,113 @@
+---
+title: "Practical Machine Learning Final Project"
+author: "Larry Martin"
+date: "January 25, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(caret)
+library(rpart)
+library(randomForest)
+```
+
+## Exercise Prediction Model
+
+The purpose of this project is to predict the quality of an excerise routine on the Weight Lifting Exercise data set. The data contains 19,622 observations of 6 test participants. They each wore accelerometers on the belt, forearm, arm and dumbbell which recorded data. There are 160 variables in the data set.  
+
+The "classe" variable is the outcome for our model. It consists of dumbbell biceps curls in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). 
+
+Read more: http://groupware.les.inf.puc-rio.br/har#ixzz55OuZ4YG9
+
+### Getting and Cleaning the Exercise Data
+```{r data}
+training <- read.csv("pml-training.csv")
+## Clean up data; remove unneeded variables and those with abundance of NAs
+t1 <- select(training, -contains("skewness"), -contains("var"), -contains("avg")
+             , -contains("std"), -contains("kurtosis"), -contains("min")
+             , -contains("max"), -contains("amplitude"))
+t1 <- select(t1, -(1:7))
+dim(t1)
+
+## Conforming the 20 test records to match training dataset
+test20 <- read.csv("pml-testing.csv")
+test20 <- select(test20, -contains("skewness")
+            , -contains("var"), -contains("avg"), -contains("std")
+            , -contains("kurtosis"), -contains("min"), -contains("max")
+            , -contains("amplitude"))
+test20 <- select(test20, -(1:7))
+dim(test20)
+# Creating a 60/40 split for Training and Testing sets
+inTrain = createDataPartition(t1$classe, p = 3/5)[[1]]  
+training = t1[ inTrain,]  
+testing = t1[-inTrain,]
+dim(training)
+dim(testing)
+```
+Some data cleaning was necessary prior to model building. Columns with excessive NAs or divide by zero errors have been removed. The first seven variables (timestamps, names, etc.) were also removed as they don't make sense as predictors of classe. 
+
+The resulting tidy data set has been partitioned with a 60/40 split for training and testing. 
+
+### Model Building
+
+I have chosen three models to run against the exercise data -- Random Forest, Boosting with Trees and Linear Discriminate Analysis. For each I am creating the model from the training data and then predicting on the testing data. 
+
+
+#### Model 1: Random Forest
+```{r model2, echo=TRUE}
+set.seed(123)
+FitRF  <- randomForest(classe ~ .,data=training, prox=TRUE)
+predRF <- predict(FitRF, testing, type = "class")
+confusionMatrix(predRF, testing$classe)$overall[1]
+confusionMatrix(predRF, testing$classe)
+```
+The Random Forest model does quite well. The accuracy is `r confusionMatrix(predRF, testing$classe)$overall[1]`. That gives is an out of sample error of `r 1-confusionMatrix(predRF, testing$classe)$overall[1]`. The plot describes how the model improves with the number of trees. Cross validation is not needed with the Random Forest model as there are different samples for each tree.  
+
+```{r plot1, echo=FALSE}
+plot(FitRF)
+```
+
+#### Boosting with Trees (GBM)
+```{r model3, echo=TRUE}
+set.seed(123)
+
+fitControl <- trainControl(method = "cv", number = 3)
+
+FitGBM <- train(classe ~ .,data=training,method="gbm", verbose=FALSE
+                , trControl=fitControl)
+predGBM <- predict(FitGBM, testing)
+confusionMatrix(predGBM, testing$classe)$overall[1]
+confusionMatrix(predGBM, testing$classe)
+```
+
+The Boosting model also performs quite well. The accuracy is `r confusionMatrix(predGBM, testing$classe)$overall[1]`. That gives is an out of sample error of `r 1-confusionMatrix(predGBM, testing$classe)$overall[1]`.  The plot helps describe what the model is doing. The model accuracy is best at max tree depth of 3 and improves as boosting iterations increase. Cross validation was set to 3 fold.
+```{r plot2, echo=FALSE}
+plot(FitGBM)
+```
+
+#### Linear Discriminate Analysis (LDA)
+```{r model4, echo=TRUE}
+set.seed(123)
+FitLDA <- train(classe ~ .,data=training,method="lda", trControl=fitControl)
+predLDA <- predict(FitLDA, testing)
+confusionMatrix(predLDA, testing$classe)$overall[1]
+confusionMatrix(predLDA, testing$classe)
+```
+
+The LDA model is not a strong as the other models. The accuracy is `r confusionMatrix(predLDA, testing$classe)$overall[1]`. That gives is an out of sample error of `r 1-confusionMatrix(predLDA, testing$classe)$overall[1]`.  
+
+
+### Predicting
+Since the Random Forest performs best, I use it to predict the 20 test problems. The resulting predictions score 100% on the final quiz.
+```{r pred1, echo=TRUE}
+finalPredictionRF <- predict(FitRF, test20, type="class")
+finalPredictionRF
+```
+Since the Boosting model was also extremely accurate I predicted the 20 test problems off of it as well. Its predictions matched that of the Random Forest.
+
+```{r pred2, echo=TRUE}
+finalPredictionGBM <- predict(FitGBM, test20)
+finalPredictionGBM
+```
